@@ -1,0 +1,248 @@
+# Sequence Retrieval from Biological Databases
+# Retrieves sequences from NCBI, UniProt, and PDB databases
+
+# Install required packages
+!pip install biopython requests
+
+from Bio import Entrez, SeqIO
+from Bio import ExPASy, SwissProt
+import requests
+from google.colab import files
+import time
+
+print("=" * 70)
+print("SEQUENCE RETRIEVAL FROM BIOLOGICAL DATABASES")
+print("=" * 70)
+
+# Set your email for NCBI (required by NCBI)
+Entrez.email = "student@example.com"
+
+def retrieve_from_ncbi(accession_id, database="nucleotide"):
+    """
+    Retrieve sequence from NCBI databases (GenBank, Protein, etc.)
+    :param accession_id: Accession number (e.g., 'NM_000546' for nucleotide)
+    :param database: 'nucleotide' or 'protein'
+    :return: SeqRecord object or None
+    """
+    print(f"\n[NCBI] Retrieving {accession_id} from {database} database...")
+    try:
+        handle = Entrez.efetch(db=database, id=accession_id, rettype="gb", retmode="text")
+        record = SeqIO.read(handle, "genbank")
+        handle.close()
+
+        print(f"✓ Retrieved: {record.description}")
+        print(f"  Length: {len(record.seq)} bp/aa")
+        print(f"  Organism: {record.annotations.get('organism', 'N/A')}")
+        print(f"  First 60 characters: {str(record.seq)[:60]}...")
+
+        return record
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        return None
+
+def retrieve_from_uniprot(uniprot_id):
+    """
+    Retrieve protein sequence from UniProt
+    :param uniprot_id: UniProt accession (e.g., 'P53_HUMAN' or 'P04637')
+    :return: Sequence data or None
+    """
+    print(f"\n[UniProt] Retrieving {uniprot_id}...")
+    try:
+        url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.fasta"
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            fasta_data = response.text
+            lines = fasta_data.strip().split('\n')
+            header = lines[0]
+            sequence = ''.join(lines[1:])
+
+            print(f"✓ Retrieved: {header}")
+            print(f"  Length: {len(sequence)} amino acids")
+            print(f"  First 60 characters: {sequence[:60]}...")
+
+            return {'header': header, 'sequence': sequence, 'fasta': fasta_data}
+        else:
+            print(f"✗ Error: HTTP {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        return None
+
+def retrieve_from_pdb(pdb_id):
+    """
+    Retrieve protein structure from PDB database
+    :param pdb_id: PDB ID (e.g., '1TIM', '3ICB')
+    :return: PDB file content or None
+    """
+    print(f"\n[PDB] Retrieving structure {pdb_id}...")
+    try:
+        url = f"https://files.rcsb.org/download/{pdb_id.upper()}.pdb"
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            pdb_data = response.text
+
+            # Extract basic info
+            lines = pdb_data.split('\n')
+            title = [l for l in lines if l.startswith('TITLE')]
+            organism = [l for l in lines if l.startswith('SOURCE')]
+
+            print(f"✓ Retrieved PDB structure: {pdb_id.upper()}")
+            if title:
+                print(f"  Title: {title[0][10:].strip()}")
+            if organism:
+                print(f"  Source: {organism[0][10:].strip()}")
+
+            return pdb_data
+        else:
+            print(f"✗ Error: HTTP {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        return None
+
+def search_ncbi(query, database="nucleotide", max_results=5):
+    """
+    Search NCBI database and return accession IDs
+    :param query: Search term (e.g., 'human insulin')
+    :param database: 'nucleotide' or 'protein'
+    :param max_results: Maximum number of results to return
+    :return: List of accession IDs
+    """
+    print(f"\n[NCBI Search] Searching for '{query}' in {database}...")
+    try:
+        handle = Entrez.esearch(db=database, term=query, retmax=max_results)
+        record = Entrez.read(handle)
+        handle.close()
+
+        id_list = record["IdList"]
+        print(f"✓ Found {len(id_list)} results")
+
+        return id_list
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        return []
+
+# ===== MAIN PROGRAM =====
+
+print("\n" + "=" * 70)
+print("SELECT RETRIEVAL METHOD")
+print("=" * 70)
+print("1. Retrieve from NCBI (GenBank) by Accession ID")
+print("2. Retrieve from UniProt by Accession ID")
+print("3. Retrieve from PDB by PDB ID")
+print("4. Search NCBI and retrieve results")
+print("5. Retrieve multiple sequences (batch)")
+
+choice = input("\nEnter your choice (1-5): ").strip()
+
+retrieved_sequences = []
+
+if choice == "1":
+    # NCBI retrieval
+    print("\n--- NCBI Retrieval ---")
+    print("Database options: nucleotide, protein")
+    db_type = input("Enter database type (default: nucleotide): ").strip() or "nucleotide"
+    accession = input("Enter accession ID (e.g., NM_000546, NP_000537): ").strip()
+
+    record = retrieve_from_ncbi(accession, db_type)
+    if record:
+        retrieved_sequences.append(record)
+        # Save to file
+        filename = f"{accession}.fasta"
+        SeqIO.write(record, filename, "fasta")
+        print(f"\n✓ Saved to {filename}")
+        files.download(filename)
+
+elif choice == "2":
+    # UniProt retrieval
+    print("\n--- UniProt Retrieval ---")
+    uniprot_id = input("Enter UniProt ID (e.g., P04637, P53_HUMAN): ").strip()
+
+    result = retrieve_from_uniprot(uniprot_id)
+    if result:
+        filename = f"{uniprot_id}.fasta"
+        with open(filename, 'w') as f:
+            f.write(result['fasta'])
+        print(f"\n✓ Saved to {filename}")
+        files.download(filename)
+
+elif choice == "3":
+    # PDB retrieval
+    print("\n--- PDB Retrieval ---")
+    pdb_id = input("Enter PDB ID (e.g., 1TIM, 3ICB): ").strip()
+
+    pdb_data = retrieve_from_pdb(pdb_id)
+    if pdb_data:
+        filename = f"{pdb_id.upper()}.pdb"
+        with open(filename, 'w') as f:
+            f.write(pdb_data)
+        print(f"\n✓ Saved to {filename}")
+        files.download(filename)
+
+elif choice == "4":
+    # Search and retrieve
+    print("\n--- NCBI Search and Retrieval ---")
+    query = input("Enter search term (e.g., 'human insulin mRNA'): ").strip()
+    db_type = input("Database (nucleotide/protein, default: nucleotide): ").strip() or "nucleotide"
+    max_results = int(input("Max results (default: 5): ").strip() or "5")
+
+    id_list = search_ncbi(query, db_type, max_results)
+
+    if id_list:
+        print(f"\nRetrieving {len(id_list)} sequences...")
+        for i, acc_id in enumerate(id_list, 1):
+            print(f"\n--- Result {i}/{len(id_list)} ---")
+            record = retrieve_from_ncbi(acc_id, db_type)
+            if record:
+                retrieved_sequences.append(record)
+            time.sleep(0.5)  # Be nice to NCBI servers
+
+        # Save all sequences
+        if retrieved_sequences:
+            filename = "retrieved_sequences.fasta"
+            SeqIO.write(retrieved_sequences, filename, "fasta")
+            print(f"\n✓ Saved {len(retrieved_sequences)} sequences to {filename}")
+            files.download(filename)
+
+elif choice == "5":
+    # Batch retrieval
+    print("\n--- Batch Retrieval ---")
+    print("Enter accession IDs separated by commas")
+    print("Example: NM_000546,NM_001126112,NM_000277")
+    ids_input = input("Accession IDs: ").strip()
+    db_type = input("Database type (nucleotide/protein, default: nucleotide): ").strip() or "nucleotide"
+
+    id_list = [id.strip() for id in ids_input.split(',')]
+
+    print(f"\nRetrieving {len(id_list)} sequences...")
+    for i, acc_id in enumerate(id_list, 1):
+        print(f"\n--- Sequence {i}/{len(id_list)} ---")
+        record = retrieve_from_ncbi(acc_id, db_type)
+        if record:
+            retrieved_sequences.append(record)
+        time.sleep(0.5)
+
+    # Save all sequences
+    if retrieved_sequences:
+        filename = "batch_sequences.fasta"
+        SeqIO.write(retrieved_sequences, filename, "fasta")
+        print(f"\n✓ Saved {len(retrieved_sequences)} sequences to {filename}")
+        files.download(filename)
+
+else:
+    print("Invalid choice!")
+
+# Summary
+print("\n" + "=" * 70)
+print("RETRIEVAL COMPLETE")
+print("=" * 70)
+print(f"Total sequences retrieved: {len(retrieved_sequences)}")
+
+if len(retrieved_sequences) > 0:
+    print("\nSequence Summary:")
+    for i, seq in enumerate(retrieved_sequences, 1):
+        print(f"  {i}. {seq.id} - {len(seq.seq)} bp/aa")
+
+print("\n✓ All files have been downloaded to your computer!")
